@@ -25,6 +25,11 @@ class FilteringExamples(unittest.TestCase):
         ], "AND")
         self.assertEqual(result["element"].tolist(), ["C2"])
 
+    def test_numeric_values_stored_as_text_are_not_dates(self):
+        frame = pd.DataFrame({"size": ["244", "180", "300"]})
+        result = apply_conditions(frame, [{"column": "size", "operator": ">", "value": 200}])
+        self.assertEqual(result["size"].tolist(), ["244", "300"])
+
     def test_or_conditions(self):
         result = apply_conditions(self.frame, [
             {"column": "type", "operator": "equals", "value": "Column"},

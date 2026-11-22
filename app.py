@@ -85,6 +85,11 @@ def detect_type(series: pd.Series) -> str:
     if pd.api.types.is_numeric_dtype(series):
         return "number"
     nonempty = series.dropna()
+    # Excel/CSV exports sometimes store numeric cells as text. Check for those
+    # before date inference, since pandas can interpret strings such as "244"
+    # as a year and mistakenly offer date operators.
+    if len(nonempty) and (pd.to_numeric(nonempty, errors="coerce").notna().mean() >= .9):
+        return "number"
     if len(nonempty) and (pd.to_datetime(nonempty, errors="coerce").notna().mean() >= .9):
         return "date"
     return "text"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import base64
 import csv
 import io
 import json
@@ -389,6 +390,30 @@ def main() -> None:
     st.session_state.selected_indices = (st.session_state.selected_indices - set(matched.index)) | selected_idx
     chosen_rows = matched.loc[matched.index.isin(selected_idx)].copy()
     st.caption(f"Selected: {len(chosen_rows):,}")
+
+    clipboard_data = base64.b64encode(matched.to_csv(sep="\t", index=False).encode("utf-8")).decode("ascii")
+    st.components.v1.html(
+        f"""<button id="copy-filtered" style="background:#416b86;color:#fff;border:0;border-radius:5px;padding:9px 14px;font:14px Arial,sans-serif;cursor:pointer">Copy filtered rows</button>
+        <span id="copy-status" style="margin-left:10px;color:#667482;font:13px Arial,sans-serif"></span>
+        <script>
+        const encoded = "{clipboard_data}";
+        const text = new TextDecoder().decode(Uint8Array.from(atob(encoded), c => c.charCodeAt(0)));
+        document.getElementById("copy-filtered").addEventListener("click", async () => {{
+          const status = document.getElementById("copy-status");
+          try {{
+            await navigator.clipboard.writeText(text);
+            status.textContent = "Copied {len(matched):,} rows";
+          }} catch (error) {{
+            const field = document.createElement("textarea");
+            field.value = text; document.body.appendChild(field); field.select();
+            const copied = document.execCommand("copy"); field.remove();
+            status.textContent = copied ? "Copied {len(matched):,} rows" : "Copy blocked by browser";
+          }}
+        }});
+        </script>""",
+        height=42,
+        scrolling=False,
+    )
 
     with st.expander("Export selected rows"):
         id_column = st.selectbox("ID column (optional)", ["— none —"] + [str(c) for c in df.columns])

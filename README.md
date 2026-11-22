@@ -70,6 +70,7 @@ The tests cover numeric/text filtering, AND/OR, empty values, safe advanced-quer
 
 ## Notes
 
+- Uploaded CSV and Excel files use row 2 as the column-header row; row 1 is skipped.
 - Presets are kept in the current browser session; export a JSON preset to persist/share it.
 - Selection changes affect the exports, while the on-screen display-column choice only changes the visible table.
 - The clipboard list is provided as selectable text because browser clipboard writes are restricted in ordinary Streamlit sessions.

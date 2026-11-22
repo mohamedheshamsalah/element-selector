@@ -1,3 +1,4 @@
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -5,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app import apply_advanced_query, apply_conditions  # noqa: E402
+from app import apply_advanced_query, apply_conditions, read_uploaded_file  # noqa: E402
 
 
 class FilteringExamples(unittest.TestCase):
@@ -51,6 +52,22 @@ class FilteringExamples(unittest.TestCase):
     def test_unknown_column_is_clear(self):
         with self.assertRaisesRegex(ValueError, "Column not found"):
             apply_conditions(self.frame, [{"column": "missing", "operator": "=", "value": 2}])
+
+    def test_csv_uses_second_row_as_headers(self):
+        raw = b"ETABS export report\nelement,story\nC101,Roof\n"
+        result, _ = read_uploaded_file(raw, "sample.csv")
+        self.assertEqual(result.columns.tolist(), ["element", "story"])
+        self.assertEqual(result.iloc[0].tolist(), ["C101", "Roof"])
+
+    def test_excel_uses_second_row_as_headers(self):
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            pd.DataFrame([["ETABS export report"], ["element", "story"], ["C101", "Roof"]]).to_excel(
+                writer, index=False, header=False, sheet_name="Results"
+            )
+        result, _ = read_uploaded_file(output.getvalue(), "sample.xlsx", "Results")
+        self.assertEqual(result.columns.tolist(), ["element", "story"])
+        self.assertEqual(result.iloc[0].tolist(), ["C101", "Roof"])
 
 
 if __name__ == "__main__":

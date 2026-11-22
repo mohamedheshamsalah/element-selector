@@ -64,14 +64,14 @@ def read_uploaded_file(data: bytes, filename: str, sheet_name: str | None = None
             sep = dialect.delimiter
         except csv.Error:
             sep = ","
-        frame = pd.read_csv(io.StringIO(text), sep=sep, engine="python")
+        frame = pd.read_csv(io.StringIO(text), sep=sep, engine="python", header=1)
         return frame, ["CSV"]
     if suffix in {"xlsx", "xls"}:
         engine = "openpyxl" if suffix == "xlsx" else "xlrd"
         try:
             book = pd.ExcelFile(io.BytesIO(data), engine=engine)
             selected = sheet_name if sheet_name in book.sheet_names else book.sheet_names[0]
-            frame = pd.read_excel(book, sheet_name=selected)
+            frame = pd.read_excel(book, sheet_name=selected, header=1)
             return frame, book.sheet_names
         except ImportError as exc:
             raise ValueError("Excel reader dependency is missing. Install the packages in requirements.txt.") from exc

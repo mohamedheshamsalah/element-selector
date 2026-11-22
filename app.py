@@ -309,7 +309,7 @@ def main() -> None:
             return
 
         st.markdown("### What should be selected?")
-        st.caption("Add one or more rules. Choose AND when every rule must match, or OR when any rule can match.")
+        st.caption("AND = all rules. OR = any rule.")
         if st.session_state.rules:
             st.session_state.combine = st.radio(
                 "Match", ["AND", "OR"], horizontal=True, key="combine",

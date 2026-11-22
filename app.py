@@ -192,6 +192,7 @@ def sample_data() -> pd.DataFrame:
 def render_rule(index: int, df: pd.DataFrame) -> dict[str, Any] | None:
     cols = [str(c) for c in df.columns]
     with st.container(border=True):
+        st.markdown(f"**Condition {index + 1}**")
         left, middle, right = st.columns([1.4, 1.3, .35])
         column = left.selectbox("Column", cols, key=f"c_{index}")
         kind = detect_type(df[column])
@@ -291,18 +292,19 @@ def main() -> None:
     meta3.markdown(f"**File:** {st.session_state.get('source_name', 'Data')}")
 
     with st.container(border=True):
-        st.subheader("Conditions")
+        st.subheader(f"Conditions ({len(st.session_state.rules)})")
         if len(st.session_state.rules) > 1:
-            st.session_state.combine = st.radio(
-                "Match", ["AND", "OR"], horizontal=True, key="combine",
-                help="AND requires every rule. OR requires any rule.",
+            st.radio(
+                "Combine conditions", ["AND", "OR"], horizontal=True, key="combine",
             )
+            st.caption("AND = all conditions. OR = any condition.")
         for i in range(len(st.session_state.rules)):
             rule = render_rule(i, df)
             if rule:
                 st.session_state.rules[i] = rule
         add_col, clear_col, _ = st.columns([1.2, 1.2, 4])
-        if add_col.button("＋ Add condition", type="primary", use_container_width=True):
+        add_label = "＋ Add another condition" if st.session_state.rules else "＋ Add condition"
+        if add_col.button(add_label, type="primary", use_container_width=True):
             st.session_state.rules.append({})
             st.rerun()
         if st.session_state.rules and clear_col.button("Clear", use_container_width=True):

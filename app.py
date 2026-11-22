@@ -12,30 +12,23 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-st.set_page_config(page_title="Element Selector", page_icon="⌖", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Element Selector", page_icon="⌖", layout="wide", initial_sidebar_state="collapsed")
 
 # ---------- Visual system ----------
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
-:root { --ink:#182a3a; --muted:#718296; --line:#e4ebf1; --paper:#f5f8fb; --accent:#167d8d; --accent2:#dff2f1; }
-html, body, [class*="css"] { font-family:'DM Sans',sans-serif; }
-.stApp { background:linear-gradient(135deg,#f7fafc 0%,#f0f6f8 100%); color:var(--ink); }
-[data-testid="stSidebar"] { background:#fff; border-right:1px solid var(--line); }
-[data-testid="stSidebar"] > div:first-child { padding-top:1.4rem; }
-h1,h2,h3 { font-family:'Manrope',sans-serif !important; color:var(--ink); letter-spacing:-.035em; }
-.hero { padding:1.45rem 1.65rem; background:linear-gradient(115deg,#123b4b,#167d8d 70%,#31a6a2); color:white; border-radius:20px; margin:0 0 1.25rem; box-shadow:0 14px 34px #123b4b1c; }
-.hero h1 { color:#fff !important; margin:0; font-size:2rem; }
-.hero p { margin:.4rem 0 0; color:#e0f3f4; font-size:.98rem; }
-.kicker { text-transform:uppercase; letter-spacing:.16em; font-size:.69rem; font-weight:700; color:#b9e8e7; margin-bottom:.55rem; }
-.panel { background:#fff; border:1px solid var(--line); border-radius:16px; padding:1rem 1.1rem; box-shadow:0 4px 16px #23394b08; }
-.small-muted { color:var(--muted); font-size:.88rem; }
-.step { display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:var(--accent2); color:var(--accent); font-weight:700; width:1.8rem;height:1.8rem;margin-right:.5rem; }
-div[data-testid="stMetric"] { background:#fff; border:1px solid var(--line); padding:1rem 1.1rem; border-radius:15px; }
-.stButton>button[kind="primary"] { background:#167d8d; border-color:#167d8d; }
-hr { border-color:var(--line); }
-[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
-@media (prefers-color-scheme: dark) { .stApp { background:#101a22; } .panel, div[data-testid="stMetric"] { background:#17252f; border-color:#2a3d4b; } h1,h2,h3 { color:#e4eef3; } }
+:root { color-scheme: light; --ink:#111111; --muted:#666666; --line:#dddddd; --paper:#ffffff; }
+html, body, [class*="css"] { font-family:Arial,Helvetica,sans-serif; }
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background:#ffffff !important; color:#111111 !important; }
+[data-testid="stSidebar"] { display:none !important; }
+h1,h2,h3,p,label,span { color:#111111; }
+div[data-testid="stMetric"] { background:#ffffff; border:1px solid #dddddd; padding:.8rem 1rem; border-radius:8px; }
+.stButton>button[kind="primary"] { background:#111111; border-color:#111111; color:#ffffff; }
+button, [data-testid="stFileUploader"] { border-radius:7px; }
+hr { border-color:#dddddd; }
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] { border:1px solid #dddddd; border-radius:8px; overflow:hidden; }
+div[data-testid="stVerticalBlockBorderWrapper"] { border-color:#dddddd !important; border-radius:8px; }
+input, textarea, [data-baseweb="select"] > div { background:#ffffff !important; color:#111111 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -237,193 +230,179 @@ def render_rule(index: int, df: pd.DataFrame) -> dict[str, Any] | None:
 
 
 def main() -> None:
-    """Simple two-tab workflow: inspect data, then filter and export."""
-    for key, default in {
+    """Single-page flow: load data, add filters, and review matching rows."""
+    defaults = {
         "rules": [], "data": None, "selected_indices": set(),
         "presets": {}, "active_name": "",
-    }.items():
+    }
+    for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    st.sidebar.markdown("### ⌖ Element Selector")
-    st.sidebar.caption("Upload a table, then choose the rows you need.")
-    uploaded = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv", "xlsx", "xls"])
-    if st.sidebar.button("Load sample data", use_container_width=True):
+    st.title("Element Selector")
+    st.caption("Filter a table and export the matching rows.")
+
+    upload_col, sample_col = st.columns([3, 1])
+    uploaded = upload_col.file_uploader("Data file", type=["csv", "xlsx", "xls"], label_visibility="collapsed")
+    if sample_col.button("Use sample data", use_container_width=True):
         st.session_state.data = sample_data()
         st.session_state.source_name = "Built-in sample"
         st.session_state.selected_indices = set(st.session_state.data.index)
+        st.session_state.rules = []
         st.session_state.pop("advanced_expression", None)
         st.session_state.pop("advanced_result", None)
         st.rerun()
+
     if uploaded is not None:
         try:
             raw = uploaded.getvalue()
             sheet = None
             if uploaded.name.lower().endswith((".xlsx", ".xls")):
-                _, sheets = read_uploaded_file(raw, uploaded.name)
-                sheet = st.sidebar.selectbox("Sheet", sheets, key=f"sheet_{uploaded.name}")
+                _, sheet_names = read_uploaded_file(raw, uploaded.name)
+                if len(sheet_names) > 1:
+                    sheet = st.selectbox("Sheet", sheet_names, key=f"sheet_{uploaded.name}")
+                else:
+                    sheet = sheet_names[0]
             frame, _ = read_uploaded_file(raw, uploaded.name, sheet)
-            if st.session_state.get("source_name") != uploaded.name or st.session_state.get("data") is None:
+            source = f"{uploaded.name} · {sheet}" if sheet else uploaded.name
+            if st.session_state.get("source_name") != source or st.session_state.get("data") is None:
                 st.session_state.selected_indices = set(frame.index)
                 st.session_state.rules = []
                 st.session_state.pop("advanced_expression", None)
                 st.session_state.pop("advanced_result", None)
             st.session_state.data = frame
-            st.session_state.source_name = uploaded.name
+            st.session_state.source_name = source
         except Exception as exc:
-            st.sidebar.error(str(exc))
+            st.error(str(exc))
 
-    st.markdown(
-        '<div class="hero"><h1>Element Selector</h1>'
-        '<p>Filter data by condition.</p></div>',
-        unsafe_allow_html=True,
-    )
-    data_tab, conditions_tab = st.tabs(["Data", "Conditions"])
     df = st.session_state.data
+    if df is None:
+        st.info("Upload a CSV or Excel file, or use the sample data.")
+        return
+    if df.empty:
+        st.warning("The file has no data rows.")
+        return
 
-    with data_tab:
-        if df is None:
-            st.markdown("### Your data")
-            st.info("Upload a CSV or Excel file from the sidebar, or load the sample data.")
-        elif df.empty:
-            st.warning("The file loaded, but it contains no data rows.")
-        else:
-            st.markdown(f"### {st.session_state.get('source_name', 'Your data')}")
-            left, right = st.columns(2)
-            left.metric("Rows", f"{len(df):,}")
-            right.metric("Columns", f"{len(df.columns):,}")
-            with st.expander("Column types", expanded=False):
-                types = pd.DataFrame({
-                    "Column": [str(c) for c in df.columns],
-                    "Type": [detect_type(df[c]) for c in df.columns],
-                })
-                st.dataframe(types, use_container_width=True, hide_index=True)
-            st.dataframe(df, use_container_width=True, hide_index=True, height=480)
+    meta1, meta2, meta3 = st.columns([1, 1, 3])
+    meta1.metric("Rows", f"{len(df):,}")
+    meta2.metric("Columns", f"{len(df.columns):,}")
+    meta3.markdown(f"**File:** {st.session_state.get('source_name', 'Data')}")
 
-    with conditions_tab:
-        if df is None:
-            st.info("Load your data in the Data tab first. Then add a condition here.")
-            return
-        if df.empty:
-            st.info("There are no rows to filter.")
-            return
-
-        st.markdown("### What should be selected?")
-        st.caption("AND = all rules. OR = any rule.")
-        if st.session_state.rules:
+    with st.container(border=True):
+        st.subheader("Conditions")
+        if len(st.session_state.rules) > 1:
             st.session_state.combine = st.radio(
                 "Match", ["AND", "OR"], horizontal=True, key="combine",
-                help="AND = all rules. OR = at least one rule.",
+                help="AND requires every rule. OR requires any rule.",
             )
         for i in range(len(st.session_state.rules)):
             rule = render_rule(i, df)
             if rule:
                 st.session_state.rules[i] = rule
-        add_col, clear_col = st.columns([1, 1])
+        add_col, clear_col, _ = st.columns([1.2, 1.2, 4])
         if add_col.button("＋ Add condition", type="primary", use_container_width=True):
             st.session_state.rules.append({})
             st.rerun()
-        if st.session_state.rules and clear_col.button("Clear conditions", use_container_width=True):
+        if st.session_state.rules and clear_col.button("Clear", use_container_width=True):
             st.session_state.rules = []
+            st.session_state.pop("advanced_expression", None)
+            st.session_state.pop("advanced_result", None)
             st.rerun()
 
-        with st.expander("Advanced condition or saved presets", expanded=False):
-            advanced = st.toggle("Use advanced expression", key="compact_advanced")
-            if advanced:
-                expression = st.text_input(
-                    "Condition", placeholder="dc_ratio > 1 and type == 'Column'",
-                    help="Column names, comparisons, and AND/OR only. No Python code.",
-                )
-                if st.button("Apply expression"):
-                    try:
-                        result = apply_advanced_query(df, expression)
-                        st.session_state.advanced_expression = expression
-                        st.session_state.advanced_result = result
-                        st.session_state.selected_indices = set(result.index)
-                        st.success("Expression applied.")
-                    except ValueError as exc:
-                        st.error(str(exc))
-            else:
-                st.session_state.pop("advanced_expression", None)
-                st.session_state.pop("advanced_result", None)
-            st.markdown("**Presets**")
-            preset_name = st.text_input("Preset name", placeholder="e.g. High demand ratio", key="compact_preset_name")
-            p1, p2 = st.columns(2)
-            if p1.button("Save preset"):
-                if not preset_name.strip():
-                    st.warning("Enter a preset name first.")
-                else:
-                    st.session_state.presets[preset_name.strip()] = {
-                        "combine": st.session_state.get("combine", "AND"),
-                        "conditions": st.session_state.rules,
-                    }
-                    st.success("Preset saved for this session.")
-            if st.session_state.presets:
-                chosen = p2.selectbox("Load preset", list(st.session_state.presets), key="compact_load_preset")
-                if p2.button("Load", key="compact_load_button"):
-                    preset = st.session_state.presets[chosen]
-                    st.session_state.rules = preset["conditions"]
-                    st.session_state.combine = preset.get("combine", "AND")
-                    st.rerun()
-            import_file = st.file_uploader("Import preset JSON", type=["json"], key="compact_preset_import")
-            if import_file is not None:
+    with st.expander("Advanced condition or saved presets", expanded=False):
+        advanced = st.toggle("Use advanced expression", key="singlepage_advanced")
+        if advanced:
+            expression = st.text_input("Condition", placeholder="dc_ratio > 1 and type == 'Column'")
+            if st.button("Apply expression"):
                 try:
-                    preset = json.loads(import_file.getvalue().decode("utf-8"))
-                    st.session_state.rules = preset["conditions"]
-                    st.session_state.combine = preset.get("combine", "AND")
-                    st.success("Preset loaded.")
-                except Exception as exc:
-                    st.error(f"Could not read preset: {exc}")
-            if preset_name.strip() in st.session_state.presets:
-                preset_json = json.dumps(st.session_state.presets[preset_name.strip()], indent=2, default=str)
-                st.download_button("Export preset JSON", preset_json, file_name="conditions.json", mime="application/json")
-
-        try:
-            if st.session_state.get("advanced_expression") and st.session_state.get("advanced_result") is not None:
-                matched = st.session_state.advanced_result
-            else:
-                matched = apply_conditions(df, st.session_state.rules, st.session_state.get("combine", "AND"))
-        except Exception as exc:
-            st.error(str(exc))
-            matched = df.iloc[0:0].copy()
-
-        chosen_rows = matched.loc[matched.index.isin(st.session_state.selected_indices)].copy()
-        percent = (100 * len(matched) / len(df)) if len(df) else 0
-        st.markdown("---")
-        st.markdown("### Matching rows")
-        st.caption(f"{len(matched):,} of {len(df):,} rows match ({percent:.1f}%).")
-        if matched.empty:
-            st.info("No rows match yet. Change or add a condition above.")
+                    result = apply_advanced_query(df, expression)
+                    st.session_state.advanced_expression = expression
+                    st.session_state.advanced_result = result
+                    st.session_state.selected_indices = set(result.index)
+                    st.success("Condition applied.")
+                except ValueError as exc:
+                    st.error(str(exc))
         else:
-            editable = matched.copy()
-            editable.insert(0, "Select", [idx in st.session_state.selected_indices for idx in editable.index])
-            edited = st.data_editor(
-                editable, use_container_width=True, hide_index=True,
-                disabled=[c for c in editable.columns if c != "Select"],
-                column_config={"Select": st.column_config.CheckboxColumn("Select", default=True)},
-                key="compact_result_editor",
-            )
-            picked = {idx for idx, selected in zip(matched.index, edited["Select"].fillna(False).tolist()) if selected}
-            st.session_state.selected_indices = (st.session_state.selected_indices - set(matched.index)) | picked
-            chosen_rows = matched.loc[matched.index.isin(picked)].copy()
-            st.caption(f"Selected {len(chosen_rows):,} rows for export.")
-            with st.expander("Download selected rows"):
-                id_col = st.selectbox("ID column (optional)", ["— none —"] + [str(c) for c in df.columns])
-                d1, d2 = st.columns(2)
-                d1.download_button(
-                    "Excel", to_excel_bytes(chosen_rows), file_name="selected_elements.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    disabled=chosen_rows.empty, use_container_width=True,
-                )
-                d2.download_button(
-                    "CSV", chosen_rows.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="selected_elements.csv", mime="text/csv",
-                    disabled=chosen_rows.empty, use_container_width=True,
-                )
-                if id_col != "— none —":
-                    ids = chosen_rows[id_col].dropna().astype(str).tolist()
-                    st.text_area("IDs (comma-separated)", ", ".join(ids), height=70)
-                    st.download_button("Download IDs", "\n".join(ids), file_name="selected_ids.txt", mime="text/plain")
+            st.session_state.pop("advanced_expression", None)
+            st.session_state.pop("advanced_result", None)
+        preset_name = st.text_input("Preset name", placeholder="Optional")
+        p1, p2 = st.columns(2)
+        if p1.button("Save preset"):
+            if preset_name.strip():
+                st.session_state.presets[preset_name.strip()] = {
+                    "combine": st.session_state.get("combine", "AND"),
+                    "conditions": st.session_state.rules,
+                }
+                st.success("Preset saved for this session.")
+            else:
+                st.warning("Enter a name first.")
+        if st.session_state.presets:
+            preset_choice = p2.selectbox("Load preset", list(st.session_state.presets), key="singlepage_load_preset")
+            if p2.button("Load", key="singlepage_load_button"):
+                preset = st.session_state.presets[preset_choice]
+                st.session_state.rules = preset["conditions"]
+                st.session_state.combine = preset.get("combine", "AND")
+                st.rerun()
+        import_file = st.file_uploader("Import preset JSON", type=["json"], key="singlepage_preset_import")
+        if import_file is not None:
+            try:
+                preset = json.loads(import_file.getvalue().decode("utf-8"))
+                st.session_state.rules = preset["conditions"]
+                st.session_state.combine = preset.get("combine", "AND")
+                st.success("Preset loaded.")
+            except Exception as exc:
+                st.error(f"Could not read preset: {exc}")
+        if preset_name.strip() in st.session_state.presets:
+            payload = json.dumps(st.session_state.presets[preset_name.strip()], indent=2, default=str)
+            st.download_button("Export preset JSON", payload, file_name="conditions.json", mime="application/json")
+
+    try:
+        if st.session_state.get("advanced_expression") and st.session_state.get("advanced_result") is not None:
+            matched = st.session_state.advanced_result
+        else:
+            matched = apply_conditions(df, st.session_state.rules, st.session_state.get("combine", "AND"))
+    except Exception as exc:
+        st.error(str(exc))
+        matched = df.iloc[0:0].copy()
+
+    percent = 100 * len(matched) / len(df) if len(df) else 0
+    st.subheader(f"Matching rows · {len(matched):,} of {len(df):,} ({percent:.1f}%)")
+    if matched.empty:
+        st.info("No rows match. Adjust the conditions above.")
+        return
+
+    editable = matched.copy()
+    editable.insert(0, "Select", [idx in st.session_state.selected_indices for idx in editable.index])
+    edited = st.data_editor(
+        editable, use_container_width=True, hide_index=True,
+        disabled=[col for col in editable.columns if col != "Select"],
+        column_config={"Select": st.column_config.CheckboxColumn("Select", default=True)},
+        key="singlepage_result_editor",
+    )
+    selected_idx = {
+        idx for idx, selected in zip(matched.index, edited["Select"].fillna(False).tolist()) if selected
+    }
+    st.session_state.selected_indices = (st.session_state.selected_indices - set(matched.index)) | selected_idx
+    chosen_rows = matched.loc[matched.index.isin(selected_idx)].copy()
+    st.caption(f"Selected: {len(chosen_rows):,}")
+
+    with st.expander("Export selected rows"):
+        id_column = st.selectbox("ID column (optional)", ["— none —"] + [str(c) for c in df.columns])
+        ex1, ex2 = st.columns(2)
+        ex1.download_button(
+            "Excel", to_excel_bytes(chosen_rows), file_name="selected_elements.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            disabled=chosen_rows.empty, use_container_width=True,
+        )
+        ex2.download_button(
+            "CSV", chosen_rows.to_csv(index=False).encode("utf-8-sig"),
+            file_name="selected_elements.csv", mime="text/csv",
+            disabled=chosen_rows.empty, use_container_width=True,
+        )
+        if id_column != "— none —":
+            ids = chosen_rows[id_column].dropna().astype(str).tolist()
+            st.text_area("IDs", ", ".join(ids), height=70)
+            st.download_button("Download IDs", "\n".join(ids), file_name="selected_ids.txt", mime="text/plain")
 
 
 if __name__ == "__main__":

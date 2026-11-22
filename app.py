@@ -17,18 +17,20 @@ st.set_page_config(page_title="Element Selector", page_icon="⌖", layout="wide"
 # ---------- Visual system ----------
 st.markdown("""
 <style>
-:root { color-scheme: light; --ink:#111111; --muted:#666666; --line:#dddddd; --paper:#ffffff; }
+:root { color-scheme: light; --ink:#202b36; --muted:#667482; --line:#dce3e8; --paper:#ffffff; --accent:#416b86; --soft:#f5f8fa; }
 html, body, [class*="css"] { font-family:Arial,Helvetica,sans-serif; }
-.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background:#ffffff !important; color:#111111 !important; }
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background:#ffffff !important; color:var(--ink) !important; }
 [data-testid="stSidebar"] { display:none !important; }
-h1,h2,h3,p,label,span { color:#111111; }
-div[data-testid="stMetric"] { background:#ffffff; border:1px solid #dddddd; padding:.8rem 1rem; border-radius:8px; }
-.stButton>button[kind="primary"] { background:#111111; border-color:#111111; color:#ffffff; }
-button, [data-testid="stFileUploader"] { border-radius:7px; }
-hr { border-color:#dddddd; }
-[data-testid="stDataFrame"], [data-testid="stDataEditor"] { border:1px solid #dddddd; border-radius:8px; overflow:hidden; }
-div[data-testid="stVerticalBlockBorderWrapper"] { border-color:#dddddd !important; border-radius:8px; }
-input, textarea, [data-baseweb="select"] > div { background:#ffffff !important; color:#111111 !important; }
+h1,h2,h3,p,label,span { color:var(--ink); }
+[data-testid="stCaptionContainer"] p { color:var(--muted) !important; }
+div[data-testid="stMetric"] { background:#ffffff; border:1px solid var(--line); padding:.8rem 1rem; border-radius:6px; box-shadow:none !important; }
+.stButton>button[kind="primary"] { background:var(--accent); border-color:var(--accent); color:#ffffff; }
+.stButton>button { border-radius:5px; box-shadow:none !important; }
+[data-testid="stFileUploader"] { background:var(--soft); border:1px solid var(--line); border-radius:6px; box-shadow:none !important; }
+hr { border-color:var(--line); }
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] { border:1px solid var(--line); border-radius:6px; overflow:hidden; box-shadow:none !important; }
+div[data-testid="stVerticalBlockBorderWrapper"] { border-color:var(--line) !important; border-radius:6px; box-shadow:none !important; }
+input, textarea, [data-baseweb="select"] > div { background:#ffffff !important; color:var(--ink) !important; border-color:var(--line) !important; }
 </style>
 """, unsafe_allow_html=True)
 

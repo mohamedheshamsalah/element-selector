@@ -6,7 +6,8 @@ A general-purpose Streamlit tool for selecting rows from CSV and Excel tables. D
 
 - CSV (.csv), Excel (.xlsx), and legacy Excel (.xls) uploads; delimiter/encoding detection and worksheet selection.
 - Column type detection, preview, visual AND/OR conditions, text/number/date operators, and a restricted advanced query mode.
-- Match counts, full-table match view, column selection, sorting, manual row selection, Excel/CSV/ID exports, and quick charts.
+- A simple two-tab interface: **Data** for the uploaded table and **Conditions** for filters, matching rows, and exports.
+- Match counts, manual row selection, Excel/CSV/ID exports, and optional advanced conditions and presets.
 - Session presets with JSON import/export, plus a built-in sample dataset.
 
 ## Run locally

@@ -74,3 +74,7 @@ The tests cover numeric/text filtering, AND/OR, empty values, safe advanced-quer
 - Presets are kept in the current browser session; export a JSON preset to persist/share it.
 - Selection changes affect the exports, while the on-screen display-column choice only changes the visible table.
 - The clipboard list is provided as selectable text because browser clipboard writes are restricted in ordinary Streamlit sessions.
+
+## Local ETABS integration (Windows)
+
+The local ETABS bridge, mock mode, Windows launchers, diagnostic report, packaging instructions, troubleshooting, and mock verification limits are documented in [README_ETABS.md](README_ETABS.md). The bridge is loopback-only; the public Streamlit deployment cannot connect to ETABS running on a user's computer.

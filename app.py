@@ -5,6 +5,7 @@ import base64
 import csv
 import io
 import json
+import os
 import re
 from datetime import date, datetime
 from typing import Any
@@ -12,8 +13,15 @@ from typing import Any
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from etabs_bridge_client import BridgeError, list_tables as etabs_list_tables
+from etabs_bridge_client import load_table as etabs_load_table
+from etabs_bridge_client import save_group as etabs_save_group
+from etabs_bridge_client import select_elements as etabs_select_elements
+from etabs_bridge_client import status as etabs_status
+from etabs_bridge_client import health as etabs_health
+from etabs_bridge_client import refresh_view as etabs_refresh_view
 
-st.set_page_config(page_title="Element Selector", page_icon="⌖", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Element Selector", page_icon="⌖", layout="wide", initial_sidebar_state="expanded" if os.getenv("ELEMENT_SELECTOR_LOCAL") == "1" else "collapsed")
 
 # ---------- Visual system ----------
 st.markdown("""
@@ -21,7 +29,6 @@ st.markdown("""
 :root { color-scheme: light; --ink:#202b36; --muted:#667482; --line:#dce3e8; --paper:#ffffff; --accent:#416b86; --soft:#f5f8fa; }
 html, body, [class*="css"] { font-family:Arial,Helvetica,sans-serif; }
 .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background:#ffffff !important; color:var(--ink) !important; }
-[data-testid="stSidebar"] { display:none !important; }
 h1,h2,h3,p,label,span { color:var(--ink); }
 [data-testid="stCaptionContainer"] p { color:var(--muted) !important; }
 div[data-testid="stMetric"] { background:#ffffff; border:1px solid var(--line); padding:.8rem 1rem; border-radius:6px; box-shadow:none !important; }
@@ -34,6 +41,8 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-color:var(--line) !impo
 input, textarea, [data-baseweb="select"] > div { background:#ffffff !important; color:var(--ink) !important; border-color:var(--line) !important; }
 </style>
 """, unsafe_allow_html=True)
+if os.getenv("ELEMENT_SELECTOR_LOCAL") != "1":
+    st.markdown('<style>[data-testid="stSidebar"]{display:none!important;}</style>', unsafe_allow_html=True)
 
 SAMPLE_ROWS = [
     ("C101","Roof","Column","W14x90",0.72,-420,38,21),("C102","Roof","Column","W14x90",1.08,-510,52,30),
@@ -195,6 +204,111 @@ def sample_data() -> pd.DataFrame:
     return pd.DataFrame(SAMPLE_ROWS, columns=["element", "story", "type", "section", "dc_ratio", "P", "M3", "V2"])
 
 
+def render_connection_check() -> None:
+    """Step through bridge/status/table checks, then let the user choose a test ID."""
+    st.subheader("Check connection")
+    st.caption("The selection check changes ETABS selection for one object. Choose the table, ID field, and object type yourself; no column names are assumed.")
+    if st.button("Run bridge, status, and table-list checks", type="primary"):
+        st.session_state.pop("connection_check_rows", None)
+        try:
+            health = etabs_health()
+            st.session_state.connection_check_health = bool(health.get("ok"))
+            st.success("PASS · Bridge health: local bridge responded.")
+        except BridgeError as exc:
+            st.session_state.connection_check_health = False
+            st.error(f"FAIL · Bridge health: {exc}")
+            return
+        try:
+            info = etabs_status()
+            connected = bool(info.get("connected")) and bool(info.get("model_loaded"))
+            st.session_state.connection_check_status = connected
+            if connected:
+                st.success(f"PASS · ETABS status/model: {info.get('etabs_version')} · {info.get('model_file')} · units {info.get('units')}")
+            else:
+                st.error(f"FAIL · ETABS status/model: {info.get('message', 'ETABS is not open or no model is loaded.')}")
+                return
+            tables = etabs_list_tables()
+            st.session_state.connection_check_tables = tables
+            if tables:
+                st.success(f"PASS · Table discovery: found {len(tables)} table keys.")
+            else:
+                st.error("FAIL · Table discovery: no tables found. Open a model and run the required analysis/design.")
+                return
+        except BridgeError as exc:
+            st.error(f"FAIL · ETABS/table discovery: {exc}")
+            return
+
+    tables = st.session_state.get("connection_check_tables", [])
+    if not tables:
+        return
+    table_key = st.selectbox("Choose a table to test", tables, key="connection_check_table")
+    if st.button("Load chosen table"):
+        try:
+            rows = etabs_load_table(table_key)
+            st.session_state.connection_check_rows = rows
+            st.session_state.connection_check_table_key = table_key
+            if rows.empty:
+                st.error(f"FAIL · Load table: '{table_key}' returned zero rows. The required analysis/design may not have been run.")
+            else:
+                st.success(f"PASS · Load table: '{table_key}' returned {len(rows):,} rows and {len(rows.columns)} columns.")
+        except BridgeError as exc:
+            st.error(f"FAIL · Load table: {exc}")
+            return
+
+    rows = st.session_state.get("connection_check_rows")
+    if rows is not None and not rows.empty:
+        id_column = st.selectbox("Choose the ID column to test", [str(c) for c in rows.columns], key="connection_check_id_column")
+        element_type = st.selectbox("Choose object type", ["frame", "area", "joint"], key="connection_check_element_type")
+        test_value = rows[id_column].dropna()
+        if test_value.empty:
+            st.error("FAIL · Selected ID column has no non-empty values. Choose another column or table.")
+            return
+        one_id = str(test_value.iloc[0])
+        st.caption(f"Test selection will target one value: {one_id}")
+        if st.button("Test select this one element in ETABS"):
+            try:
+                result = etabs_select_elements([one_id], element_type, clear_first=False)
+                if result.get("selected_count") == 1:
+                    etabs_refresh_view()
+                    st.success(f"PASS · Select one element: {one_id} ({element_type}); ETABS view refresh succeeded.")
+                else:
+                    st.error(f"FAIL · Select one element: {one_id} ({element_type}); failed names: {result.get('failed_names', [])}")
+            except BridgeError as exc:
+                st.error(f"FAIL · Select/refresh: {exc}")
+
+
+def render_etabs_actions(chosen_rows: pd.DataFrame, df: pd.DataFrame) -> None:
+    """Select the checked result rows in ETABS or save them to a named group."""
+    if not os.getenv("ELEMENT_SELECTOR_LOCAL") == "1":
+        return
+    with st.expander("ETABS actions", expanded=True):
+        id_columns = [str(c) for c in df.columns]
+        default_id = id_columns.index("UniqueName") if "UniqueName" in id_columns else 0
+        id_column = st.selectbox("Element ID column", id_columns, index=default_id, key="etabs_id_column")
+        kind = st.selectbox("ETABS object type", ["frame", "area", "joint"], key="etabs_element_type")
+        clear_first = st.checkbox("Clear existing ETABS selection first", value=True)
+        ids = chosen_rows[id_column].dropna().astype(str).tolist()
+        select_col, group_col = st.columns(2)
+        if select_col.button("Select in ETABS", disabled=not ids, use_container_width=True):
+            try:
+                result = etabs_select_elements(ids, kind, clear_first)
+                etabs_refresh_view()
+                st.success(f"Selected {result['selected_count']:,} of {len(ids):,} {kind} objects.")
+                if result.get("failed_names"):
+                    st.warning("Not found: " + ", ".join(result["failed_names"][:30]))
+            except BridgeError as exc:
+                st.error(str(exc))
+        group_name = st.text_input("Group name", key="etabs_group_name")
+        if group_col.button("Save as group in ETABS", disabled=not ids or not group_name.strip(), use_container_width=True):
+            try:
+                result = etabs_save_group(group_name, ids, kind)
+                st.success(f"Saved {result['assigned_count']:,} objects to group '{result['group_name']}'.")
+                if result.get("failed_names"):
+                    st.warning("Not assigned: " + ", ".join(result["failed_names"][:30]))
+            except BridgeError as exc:
+                st.error(str(exc))
+
+
 def render_rule(index: int, df: pd.DataFrame) -> dict[str, Any] | None:
     cols = [str(c) for c in df.columns]
     with st.container(border=True):
@@ -251,9 +365,51 @@ def main() -> None:
     st.title("Element Selector")
     st.caption("Filter a table and export the matching rows.")
 
+    local_mode = os.getenv("ELEMENT_SELECTOR_LOCAL") == "1"
+    data_source = "Upload file"
+    local_page = "Data"
+    if local_mode:
+        with st.sidebar:
+            st.header("Data source")
+            local_page = st.radio("Page", ["Data", "Check connection"], label_visibility="collapsed", key="local_page")
+            data_source = st.radio("Source", ["Upload file", "Connect to ETABS"], key="data_source")
+            if data_source == "Connect to ETABS":
+                try:
+                    info = etabs_status()
+                    if info.get("connected") and info.get("model_loaded"):
+                        st.success(f"Connected · {info.get('etabs_version', 'ETABS')}\n{info.get('model_file', '')}")
+                    else:
+                        st.warning(info.get("message", "ETABS is not open or no model is loaded."))
+                except BridgeError as exc:
+                    st.error(str(exc))
+                try:
+                    available_tables = etabs_list_tables()
+                    selected_table = st.selectbox("ETABS table", available_tables, key="etabs_table")
+                    if st.button("Load selected table", type="primary", use_container_width=True):
+                        loaded = etabs_load_table(selected_table)
+                        if loaded.empty:
+                            st.warning("This table has no rows. Try another table, or run the required analysis/design in ETABS.")
+                        else:
+                            st.session_state.data = loaded
+                            st.session_state.source_name = f"ETABS · {selected_table}"
+                            st.session_state.selected_indices = set(loaded.index)
+                            st.session_state.rules = []
+                            st.session_state.pop("advanced_expression", None)
+                            st.session_state.pop("advanced_result", None)
+                            st.rerun()
+                except BridgeError as exc:
+                    st.caption("Open ETABS, open a model, and run analysis/design if result tables are needed.")
+                    st.error(str(exc))
+            st.divider()
+            st.caption("ETABS connection stays on this PC via localhost.")
+
+    if local_mode and local_page == "Check connection":
+        render_connection_check()
+        return
+
     upload_col, sample_col = st.columns([3, 1])
-    uploaded = upload_col.file_uploader("Data file", type=["csv", "xlsx", "xls"], label_visibility="collapsed")
-    if sample_col.button("Use sample data", use_container_width=True):
+    uploaded = upload_col.file_uploader("Data file", type=["csv", "xlsx", "xls"], label_visibility="collapsed") if data_source == "Upload file" else None
+    if data_source == "Upload file" and sample_col.button("Use sample data", use_container_width=True):
         st.session_state.data = sample_data()
         st.session_state.source_name = "Built-in sample"
         st.session_state.selected_indices = set(st.session_state.data.index)
@@ -395,6 +551,7 @@ def main() -> None:
     st.session_state.selected_indices = (st.session_state.selected_indices - set(matched.index)) | selected_idx
     chosen_rows = matched.loc[matched.index.isin(selected_idx)].copy()
     st.caption(f"Selected: {len(chosen_rows):,}")
+    render_etabs_actions(chosen_rows, df)
 
     clipboard_data = base64.b64encode(matched.to_csv(sep="\t", index=False).encode("utf-8")).decode("ascii")
     st.components.v1.html(
